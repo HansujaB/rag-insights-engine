@@ -1,10 +1,13 @@
 // API service for backend integration
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+// Normalize API_BASE_URL to remove trailing slashes
+const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/+$/, '');
 
 // Warn if using localhost in production
 if (import.meta.env.PROD && API_BASE_URL.includes('localhost')) {
   console.warn('⚠️ VITE_API_URL is not set! Using localhost. Please set VITE_API_URL in Vercel environment variables.');
 }
+
+console.log('API Base URL:', API_BASE_URL);
 
 export interface Document {
   doc_id: string;
@@ -93,7 +96,9 @@ async function apiCall<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const url = `${API_BASE_URL}${endpoint}`;
+  // Ensure endpoint starts with / and construct URL properly
+  const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  const url = `${API_BASE_URL}${normalizedEndpoint}`;
   
   const response = await fetch(url, {
     ...options,
@@ -117,6 +122,7 @@ export const uploadApi = {
     const formData = new FormData();
     formData.append('file', file);
     
+    // Ensure proper URL construction without double slashes
     const url = `${API_BASE_URL}/api/upload-docs`;
     
     // Log for debugging (remove in production if needed)
