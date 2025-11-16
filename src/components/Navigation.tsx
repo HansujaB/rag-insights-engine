@@ -26,6 +26,12 @@ export const Navigation = () => {
               Upload
             </NavLink>
             <NavLink 
+              to="/query" 
+              className="text-foreground/80 hover:text-foreground transition-smooth"
+            >
+              Query
+            </NavLink>
+            <NavLink 
               to="/experiments" 
               className="text-foreground/80 hover:text-foreground transition-smooth"
             >
@@ -60,6 +66,13 @@ export const Navigation = () => {
               onClick={() => setIsOpen(false)}
             >
               Upload
+            </NavLink>
+            <NavLink 
+              to="/query" 
+              className="block text-foreground/80 hover:text-foreground transition-smooth"
+              onClick={() => setIsOpen(false)}
+            >
+              Query
             </NavLink>
             <NavLink 
               to="/experiments" 
