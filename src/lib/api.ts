@@ -1,6 +1,11 @@
 // API service for backend integration
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
+// Warn if using localhost in production
+if (import.meta.env.PROD && API_BASE_URL.includes('localhost')) {
+  console.warn('⚠️ VITE_API_URL is not set! Using localhost. Please set VITE_API_URL in Vercel environment variables.');
+}
+
 export interface Document {
   doc_id: string;
   filename: string;
@@ -112,9 +117,15 @@ export const uploadApi = {
     const formData = new FormData();
     formData.append('file', file);
     
-    const response = await fetch(`${API_BASE_URL}/api/upload-docs`, {
+    const url = `${API_BASE_URL}/api/upload-docs`;
+    
+    // Log for debugging (remove in production if needed)
+    console.log('Uploading to:', url);
+    
+    const response = await fetch(url, {
       method: 'POST',
       body: formData,
+      credentials: 'include', // Include credentials for CORS
     });
 
     if (!response.ok) {
