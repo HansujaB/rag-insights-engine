@@ -13,7 +13,7 @@ google-generativeai==0.3.2
 
 # Vector Search (optional but recommended)
 faiss-cpu==1.10.0
-numpy==1.26.4
+numpy>=1.24.3,<2.0.0
 
 # Environment variables
 python-dotenv==1.0.0
