@@ -1,5 +1,3 @@
-# backend/routes/rag.py
-
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
@@ -24,7 +22,7 @@ class RAGRequest(BaseModel):
     chunk_size: int = 512
     overlap_percent: int = 10
     top_k: int = 5
-    model_name: str = "grok"     # updated - no Gemini
+    model_name: str = "llama-3.1-8b-instant"  # Updated to Groq model
     temperature: float = 0.7
 
 
@@ -34,7 +32,7 @@ class RAGExperimentRequest(BaseModel):
     chunk_sizes: List[int] = [256, 512, 1024, 2048]
     overlap_percent: int = 10
     top_k: int = 5
-    model_name: str = "grok"     # updated
+    model_name: str = "llama-3.1-8b-instant"  # Updated to Groq model
 
 
 # ------------------------------
@@ -56,7 +54,7 @@ async def run_rag(request: RAGRequest):
             raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
 
     retriever = get_retriever()
-    generator = get_generator()      # <---- IMPORTANT: Grok generator does NOT use model_name
+    generator = get_generator()
 
     retriever.clear()
 
@@ -102,17 +100,19 @@ async def run_rag(request: RAGRequest):
             "config": {
                 "chunk_size": request.chunk_size,
                 "overlap_percent": request.overlap_percent,
-                "top_k": request.top_k
+                "top_k": request.top_k,
+                "model": request.model_name
             },
             "latency": time.time() - start_time
         }
 
     context_chunks = [r["chunk"] for r in search_results]
 
-    # Generate answer (Grok)
+    # Generate answer using Groq with specified model
     generation_result = generator.generate_answer(
         query=request.query,
         context_chunks=context_chunks,
+        model_name=request.model_name,  # Pass model_name to generator
         max_tokens=2048,
         temperature=request.temperature
     )
@@ -127,7 +127,7 @@ async def run_rag(request: RAGRequest):
             "chunk_size": request.chunk_size,
             "overlap_percent": request.overlap_percent,
             "top_k": request.top_k,
-            "model": "grok",
+            "model": request.model_name,
             "temperature": request.temperature
         },
         "usage": generation_result.get("usage", {}),
@@ -161,7 +161,7 @@ async def run_experiment(request: RAGExperimentRequest):
                 chunk_size=chunk_size,
                 overlap_percent=request.overlap_percent,
                 top_k=request.top_k,
-                model_name="grok"
+                model_name=request.model_name  # Use the model from experiment request
             )
 
             result = await run_rag(rag_request)
