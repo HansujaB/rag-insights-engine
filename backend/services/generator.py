@@ -1,6 +1,11 @@
 # backend/services/generator.py
 import os
 from typing import List, Dict, Any
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
 try:
     from groq import Groq
 except ImportError:
@@ -17,8 +22,10 @@ class LLMGenerator:
         self.model_name = model_name
         if Groq and GROQ_API_KEY:
             self.client = Groq(api_key=GROQ_API_KEY)
+            print(f"✓ Groq client initialized with model: {model_name}")
         else:
             self.client = None
+            print("⚠ Groq client not initialized - check GROQ_API_KEY in .env file")
     
     def generate_answer(
         self, 

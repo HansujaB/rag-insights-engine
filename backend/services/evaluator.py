@@ -2,6 +2,11 @@
 import os
 import re
 from typing import Dict, Any, List
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
 try:
     from groq import Groq
 except ImportError:
@@ -18,8 +23,10 @@ class RAGEvaluator:
         self.model_name = model_name
         if Groq and GROQ_API_KEY:
             self.client = Groq(api_key=GROQ_API_KEY)
+            print(f"✓ Groq evaluator initialized with model: {model_name}")
         else:
             self.client = None
+            print("⚠ Groq evaluator not initialized - check GROQ_API_KEY in .env file")
     
     def evaluate_response(
         self,
