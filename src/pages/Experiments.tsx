@@ -406,19 +406,19 @@ const Experiments = () => {
                                       Chunk: {exp.chunk_size}
                                     </Badge>
                                     <Badge variant="secondary">
-                                      {result.retrieved_chunks.length} chunks
+                                      {result.retrieved_chunks?.length || 0} chunks
                                     </Badge>
                                   </div>
                                   <div className="space-y-2 text-sm mb-3">
                                     <div className="flex justify-between items-center">
                                       <span className="text-muted-foreground">Latency</span>
-                                      <span className="font-semibold text-lg">{result.latency.toFixed(2)}s</span>
+                                      <span className="font-semibold text-lg">{result.latency?.toFixed(2) || 'N/A'}s</span>
                                     </div>
                                     <div className="flex justify-between">
                                       <span className="text-muted-foreground">Total Chunks</span>
-                                      <span className="font-semibold">{result.total_chunks_indexed}</span>
+                                      <span className="font-semibold">{result.total_chunks_indexed || 0}</span>
                                     </div>
-                                    {result.usage && (
+                                    {result.usage && result.usage.total_tokens && (
                                       <div className="flex justify-between">
                                         <span className="text-muted-foreground">Tokens</span>
                                         <span className="font-semibold">{result.usage.total_tokens}</span>
@@ -427,9 +427,13 @@ const Experiments = () => {
                                   </div>
                                   <div className="mt-3 pt-3 border-t">
                                     <p className="text-xs font-semibold text-muted-foreground mb-2">Answer Preview:</p>
-                                    <p className="text-sm leading-relaxed line-clamp-3">
-                                      {result.answer}
-                                    </p>
+                                    {result.answer ? (
+                                      <p className="text-sm leading-relaxed line-clamp-4">
+                                        {result.answer}
+                                      </p>
+                                    ) : (
+                                      <p className="text-xs text-muted-foreground italic">No answer available</p>
+                                    )}
                                   </div>
                                 </Card>
                               );
@@ -438,51 +442,89 @@ const Experiments = () => {
                         </TabsContent>
 
                         <TabsContent value="answers" className="mt-4 space-y-4">
-                          {experiment.results.experiments.map((exp, index) => {
-                            if (exp.error || !exp.result) return null;
-                            
-                            const key = `${experiment.id}-${index}`;
-                            const isExpanded = expandedAnswers.has(key);
-                            
-                            return (
-                              <Card key={index} className="p-6">
-                                <div className="flex items-center justify-between mb-4">
-                                  <div className="flex items-center gap-3">
-                                    <Badge variant="outline" className="text-base px-3 py-1">
-                                      Chunk Size: {exp.chunk_size}
-                                    </Badge>
-                                    <span className="text-sm text-muted-foreground">
-                                      {exp.result.retrieved_chunks.length} chunks • {exp.result.latency.toFixed(2)}s
-                                    </span>
+                          {experiment.results.experiments.length === 0 ? (
+                            <Card className="p-6">
+                              <p className="text-sm text-muted-foreground text-center">No results available</p>
+                            </Card>
+                          ) : (
+                            experiment.results.experiments.map((exp, index) => {
+                              if (exp.error) {
+                                return (
+                                  <Card key={index} className="p-6 border-red-200 bg-red-50 dark:bg-red-950">
+                                    <div className="flex items-center gap-2 mb-2">
+                                      <Badge variant="destructive">Error</Badge>
+                                      <span className="font-semibold">Chunk Size: {exp.chunk_size}</span>
+                                    </div>
+                                    <p className="text-sm text-red-600 dark:text-red-400">{exp.error}</p>
+                                  </Card>
+                                );
+                              }
+                              
+                              if (!exp.result || !exp.result.answer) {
+                                return (
+                                  <Card key={index} className="p-6 border-yellow-200 bg-yellow-50 dark:bg-yellow-950">
+                                    <div className="flex items-center gap-2 mb-2">
+                                      <Badge variant="outline">Chunk Size: {exp.chunk_size}</Badge>
+                                    </div>
+                                    <p className="text-sm text-yellow-600 dark:text-yellow-400">No answer returned for this configuration</p>
+                                  </Card>
+                                );
+                              }
+                              
+                              const key = `${experiment.id}-${index}`;
+                              const isExpanded = expandedAnswers.has(key);
+                              
+                              return (
+                                <Card key={index} className="p-6 hover:shadow-lg transition-shadow">
+                                  <div className="flex items-center justify-between mb-4">
+                                    <div className="flex items-center gap-3 flex-wrap">
+                                      <Badge variant="outline" className="text-base px-3 py-1">
+                                        Chunk Size: {exp.chunk_size}
+                                      </Badge>
+                                      <span className="text-sm text-muted-foreground">
+                                        {exp.result.retrieved_chunks?.length || 0} chunks • {exp.result.latency?.toFixed(2) || 'N/A'}s
+                                      </span>
+                                    </div>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => toggleAnswer(experiment.id, index)}
+                                    >
+                                      {isExpanded ? (
+                                        <>
+                                          <ChevronUp className="w-4 h-4 mr-2" />
+                                          Collapse
+                                        </>
+                                      ) : (
+                                        <>
+                                          <ChevronDown className="w-4 h-4 mr-2" />
+                                          Show Full Answer
+                                        </>
+                                      )}
+                                    </Button>
                                   </div>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => toggleAnswer(experiment.id, index)}
-                                  >
-                                    {isExpanded ? (
-                                      <>
-                                        <ChevronUp className="w-4 h-4 mr-2" />
-                                        Collapse
-                                      </>
+                                  <div className="bg-secondary/50 rounded-lg p-4">
+                                    {exp.result.answer ? (
+                                      <div className="space-y-2">
+                                        <p className={`text-base leading-relaxed whitespace-pre-wrap ${
+                                          !isExpanded && exp.result.answer.length > 2000 ? 'line-clamp-20' : ''
+                                        }`}>
+                                          {exp.result.answer}
+                                        </p>
+                                        {!isExpanded && exp.result.answer.length > 2000 && (
+                                          <p className="text-xs text-muted-foreground italic pt-2">
+                                            Answer truncated (showing first ~2000 characters). Click "Show Full Answer" to see complete response ({exp.result.answer.length} characters total).
+                                          </p>
+                                        )}
+                                      </div>
                                     ) : (
-                                      <>
-                                        <ChevronDown className="w-4 h-4 mr-2" />
-                                        Expand
-                                      </>
+                                      <p className="text-sm text-muted-foreground">No answer available</p>
                                     )}
-                                  </Button>
-                                </div>
-                                <div className="bg-secondary/50 rounded-lg p-4">
-                                  <p className={`text-base leading-relaxed whitespace-pre-wrap ${
-                                    !isExpanded ? 'line-clamp-6' : ''
-                                  }`}>
-                                    {exp.result.answer}
-                                  </p>
-                                </div>
-                              </Card>
-                            );
-                          })}
+                                  </div>
+                                </Card>
+                              );
+                            })
+                          )}
                         </TabsContent>
 
                         <TabsContent value="comparison" className="mt-4">

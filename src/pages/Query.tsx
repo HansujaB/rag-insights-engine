@@ -11,7 +11,7 @@ import {
   Send, Loader2, FileText, Settings, 
   MessageSquare, BarChart3, Sparkles, XCircle, Copy, Check
 } from "lucide-react";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { uploadApi, ragApi, evaluationApi, Document, RAGResponse, EvaluationResponse } from "@/lib/api";
 import { useQuery } from "@tanstack/react-query";
@@ -84,9 +84,11 @@ const Query = () => {
 
       setRagResult(result);
       setError(null);
+      const chunksCount = result?.retrieved_chunks?.length || 0;
+      const latency = result?.latency ? result.latency.toFixed(2) : 'N/A';
       toast({
         title: "Query completed",
-        description: `Retrieved ${result.retrieved_chunks.length} chunks in ${result.latency.toFixed(2)}s`,
+        description: `Retrieved ${chunksCount} chunks in ${latency}s`,
       });
       
       // Auto-scroll to results
@@ -94,6 +96,7 @@ const Query = () => {
         resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }, 100);
     } catch (error: any) {
+      console.error('Query error:', error);
       const errorMessage = error.message || "Failed to run RAG query";
       setError(errorMessage);
       setRagResult(null);
@@ -121,10 +124,19 @@ const Query = () => {
     setIsEvaluating(true);
 
     try {
-      const contextChunks = ragResult.retrieved_chunks.map(chunk => chunk.chunk);
+      if (!ragResult.retrieved_chunks || !Array.isArray(ragResult.retrieved_chunks)) {
+        toast({
+          title: "Invalid result",
+          description: "No chunks available for evaluation",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      const contextChunks = ragResult.retrieved_chunks.map(chunk => chunk.chunk || '').filter(chunk => chunk);
       const result = await evaluationApi.evaluate({
-        query: ragResult.query,
-        generated_answer: ragResult.answer,
+        query: ragResult.query || '',
+        generated_answer: ragResult.answer || '',
         context_chunks: contextChunks,
         evaluator_model: modelName,
       });
@@ -353,6 +365,7 @@ const Query = () => {
               {/* Results */}
               <div ref={resultsRef}>
                 {ragResult && !isRunning && (
+                  ragResult.answer ? (
                 <Tabs defaultValue="answer" className="w-full">
                   <TabsList className="grid w-full grid-cols-3">
                     <TabsTrigger value="answer">Answer</TabsTrigger>
@@ -366,8 +379,10 @@ const Query = () => {
                         <h3 className="text-xl font-semibold">Answer</h3>
                         <div className="flex items-center gap-3">
                           <div className="flex gap-2 text-sm text-muted-foreground">
-                            <span>Latency: {ragResult.latency.toFixed(2)}s</span>
-                            {ragResult.usage && (
+                            {ragResult.latency !== undefined && (
+                              <span>Latency: {ragResult.latency.toFixed(2)}s</span>
+                            )}
+                            {ragResult.usage && ragResult.usage.total_tokens && (
                               <span>• Tokens: {ragResult.usage.total_tokens}</span>
                             )}
                           </div>
@@ -392,10 +407,22 @@ const Query = () => {
                       </div>
                       <div className="mt-4 pt-4 border-t">
                         <div className="flex flex-wrap gap-2 text-xs">
-                          <Badge variant="outline">Chunk Size: {ragResult.config.chunk_size}</Badge>
-                          <Badge variant="outline">Top K: {ragResult.config.top_k}</Badge>
-                          <Badge variant="outline">Model: {ragResult.config.model}</Badge>
-                          <Badge variant="outline">Chunks Indexed: {ragResult.total_chunks_indexed}</Badge>
+                          {ragResult.config && (
+                            <>
+                              {ragResult.config.chunk_size !== undefined && (
+                                <Badge variant="outline">Chunk Size: {ragResult.config.chunk_size}</Badge>
+                              )}
+                              {ragResult.config.top_k !== undefined && (
+                                <Badge variant="outline">Top K: {ragResult.config.top_k}</Badge>
+                              )}
+                              {ragResult.config.model && (
+                                <Badge variant="outline">Model: {ragResult.config.model}</Badge>
+                              )}
+                            </>
+                          )}
+                          {ragResult.total_chunks_indexed !== undefined && (
+                            <Badge variant="outline">Chunks Indexed: {ragResult.total_chunks_indexed}</Badge>
+                          )}
                         </div>
                       </div>
                     </Card>
@@ -404,10 +431,11 @@ const Query = () => {
                   <TabsContent value="chunks" className="space-y-4">
                     <Card className="p-6">
                       <h3 className="text-lg font-semibold mb-4">
-                        Retrieved Chunks ({ragResult.retrieved_chunks.length})
+                        Retrieved Chunks ({ragResult.retrieved_chunks?.length || 0})
                       </h3>
                       <div className="space-y-4">
-                        {ragResult.retrieved_chunks.map((chunk, index) => (
+                        {ragResult.retrieved_chunks && ragResult.retrieved_chunks.length > 0 ? (
+                          ragResult.retrieved_chunks.map((chunk, index) => (
                           <div
                             key={index}
                             className="p-4 border rounded-lg bg-secondary/50"
@@ -419,9 +447,14 @@ const Query = () => {
                                 <span>• Doc: {chunk.doc_id.slice(0, 8)}...</span>
                               </div>
                             </div>
-                            <p className="text-sm leading-relaxed">{chunk.chunk}</p>
+                            <p className="text-sm leading-relaxed">{chunk.chunk || 'No content'}</p>
                           </div>
-                        ))}
+                        ))
+                        ) : (
+                          <p className="text-sm text-muted-foreground text-center py-8">
+                            No chunks retrieved
+                          </p>
+                        )}
                       </div>
                     </Card>
                   </TabsContent>
@@ -488,6 +521,17 @@ const Query = () => {
                     </Card>
                   </TabsContent>
                 </Tabs>
+                  ) : (
+                    <Card className="p-6 border-yellow-500 bg-yellow-50 dark:bg-yellow-950">
+                      <div className="flex items-center gap-2 text-yellow-600 dark:text-yellow-400">
+                        <XCircle className="w-5 h-5" />
+                        <div>
+                          <h3 className="font-semibold">Invalid Response</h3>
+                          <p className="text-sm">The query completed but no answer was returned. Check the console for details.</p>
+                        </div>
+                      </div>
+                    </Card>
+                  )
                 )}
               </div>
             </div>

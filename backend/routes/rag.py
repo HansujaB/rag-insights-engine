@@ -115,10 +115,11 @@ async def run_rag(request: RAGRequest):
     # Extract chunks for generation
     context_chunks = [r["chunk"] for r in search_results]
     
-    # Generate answer
+    # Generate answer with increased token limit for better responses
     generation_result = generator.generate_answer(
         query=request.query,
         context_chunks=context_chunks,
+        max_tokens=2048,  # Increased from default 1000 for better responses
         temperature=request.temperature
     )
     

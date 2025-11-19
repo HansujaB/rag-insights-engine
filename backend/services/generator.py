@@ -27,7 +27,7 @@ class LLMGenerator:
         self, 
         query: str, 
         context_chunks: List[str],
-        max_tokens: int = 1000,
+        max_tokens: int = 2048,
         temperature: float = 0.7
     ) -> Dict[str, Any]:
         """
