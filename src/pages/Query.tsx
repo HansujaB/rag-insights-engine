@@ -22,7 +22,7 @@ const Query = () => {
   const [chunkSize, setChunkSize] = useState(512);
   const [topK, setTopK] = useState(5);
   const [overlapPercent, setOverlapPercent] = useState(10);
-  const [modelName, setModelName] = useState("gemini-2.0-flash-exp");
+  const [modelName, setModelName] = useState("gemini-2.0-flash-lite");
   const [temperature, setTemperature] = useState(0.7);
   const [ragResult, setRagResult] = useState<RAGResponse | null>(null);
   const [evaluationResult, setEvaluationResult] = useState<EvaluationResponse | null>(null);
