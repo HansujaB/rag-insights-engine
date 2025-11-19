@@ -9,9 +9,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
   Send, Loader2, FileText, Settings, 
-  MessageSquare, BarChart3, Sparkles 
+  MessageSquare, BarChart3, Sparkles, XCircle, Copy, Check
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { uploadApi, ragApi, evaluationApi, Document, RAGResponse, EvaluationResponse } from "@/lib/api";
 import { useQuery } from "@tanstack/react-query";
@@ -28,6 +28,9 @@ const Query = () => {
   const [evaluationResult, setEvaluationResult] = useState<EvaluationResponse | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [isEvaluating, setIsEvaluating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const resultsRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
   // Fetch documents
@@ -66,6 +69,7 @@ const Query = () => {
     setIsRunning(true);
     setRagResult(null);
     setEvaluationResult(null);
+    setError(null); 
 
     try {
       const result = await ragApi.runRAG({
@@ -79,20 +83,30 @@ const Query = () => {
       });
 
       setRagResult(result);
+      setError(null);
       toast({
         title: "Query completed",
         description: `Retrieved ${result.retrieved_chunks.length} chunks in ${result.latency.toFixed(2)}s`,
       });
+      
+      // Auto-scroll to results
+      setTimeout(() => {
+        resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 100);
     } catch (error: any) {
+      const errorMessage = error.message || "Failed to run RAG query";
+      setError(errorMessage);
+      setRagResult(null);
       toast({
         title: "Query failed",
-        description: error.message || "Failed to run RAG query",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
       setIsRunning(false);
     }
   };
+
 
   const handleEvaluate = async () => {
     if (!ragResult) {
@@ -128,6 +142,25 @@ const Query = () => {
       });
     } finally {
       setIsEvaluating(false);
+    }
+  };
+
+  const handleCopyAnswer = async () => {
+    if (!ragResult) return;
+    try {
+      await navigator.clipboard.writeText(ragResult.answer);
+      setCopied(true);
+      toast({
+        title: "Copied!",
+        description: "Answer copied to clipboard",
+      });
+      setTimeout(() => setCopied(false), 2000);
+    } catch (error) {
+      toast({
+        title: "Copy failed",
+        description: "Failed to copy to clipboard",
+        variant: "destructive",
+      });
     }
   };
 
@@ -294,8 +327,32 @@ const Query = () => {
                 </div>
               </Card>
 
+              {/* Error Display */}
+              {error && !isRunning && (
+                <Card className="p-6 border-red-500 bg-red-50 dark:bg-red-950">
+                  <div className="flex items-center gap-2 text-red-600 dark:text-red-400">
+                    <XCircle className="w-5 h-5" />
+                    <div>
+                      <h3 className="font-semibold">Error</h3>
+                      <p className="text-sm">{error}</p>
+                    </div>
+                  </div>
+                </Card>
+              )}
+
+              {/* Loading State */}
+              {isRunning && (
+                <Card className="p-6">
+                  <div className="flex items-center justify-center gap-3 py-8">
+                    <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                    <span className="text-muted-foreground">Processing your query...</span>
+                  </div>
+                </Card>
+              )}
+
               {/* Results */}
-              {ragResult && (
+              <div ref={resultsRef}>
+                {ragResult && !isRunning && (
                 <Tabs defaultValue="answer" className="w-full">
                   <TabsList className="grid w-full grid-cols-3">
                     <TabsTrigger value="answer">Answer</TabsTrigger>
@@ -304,19 +361,35 @@ const Query = () => {
                   </TabsList>
 
                   <TabsContent value="answer" className="space-y-4">
-                    <Card className="p-6">
+                    <Card className="p-6 border-2 border-primary/20">
                       <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-lg font-semibold">Answer</h3>
-                        <div className="flex gap-2 text-sm text-muted-foreground">
-                          <span>Latency: {ragResult.latency.toFixed(2)}s</span>
-                          {ragResult.usage && (
-                            <span>• Tokens: {ragResult.usage.total_tokens}</span>
-                          )}
+                        <h3 className="text-xl font-semibold">Answer</h3>
+                        <div className="flex items-center gap-3">
+                          <div className="flex gap-2 text-sm text-muted-foreground">
+                            <span>Latency: {ragResult.latency.toFixed(2)}s</span>
+                            {ragResult.usage && (
+                              <span>• Tokens: {ragResult.usage.total_tokens}</span>
+                            )}
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={handleCopyAnswer}
+                            className="h-8 w-8 p-0"
+                          >
+                            {copied ? (
+                              <Check className="w-4 h-4 text-green-500" />
+                            ) : (
+                              <Copy className="w-4 h-4" />
+                            )}
+                          </Button>
                         </div>
                       </div>
-                      <p className="text-base leading-relaxed whitespace-pre-wrap">
-                        {ragResult.answer}
-                      </p>
+                      <div className="prose prose-sm max-w-none">
+                        <p className="text-base leading-relaxed whitespace-pre-wrap bg-secondary/30 p-4 rounded-lg">
+                          {ragResult.answer}
+                        </p>
+                      </div>
                       <div className="mt-4 pt-4 border-t">
                         <div className="flex flex-wrap gap-2 text-xs">
                           <Badge variant="outline">Chunk Size: {ragResult.config.chunk_size}</Badge>
@@ -415,7 +488,8 @@ const Query = () => {
                     </Card>
                   </TabsContent>
                 </Tabs>
-              )}
+                )}
+              </div>
             </div>
           </div>
         </div>

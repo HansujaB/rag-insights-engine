@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
   Plus, Play, Settings, Loader2, FileText, 
-  BarChart3, TrendingUp, Zap 
+  BarChart3, TrendingUp, Zap, ChevronDown, ChevronUp
 } from "lucide-react";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
@@ -37,6 +37,7 @@ const Experiments = () => {
   const [overlapPercent, setOverlapPercent] = useState(10);
   const [modelName, setModelName] = useState("gemini-2.0-flash-exp");
   const [isRunning, setIsRunning] = useState(false);
+  const [expandedAnswers, setExpandedAnswers] = useState<Set<string>>(new Set());
   const { toast } = useToast();
 
   // Fetch documents
@@ -162,6 +163,19 @@ const Experiments = () => {
       .sort((a, b) => 
         (b.result?.retrieved_chunks.length || 0) - (a.result?.retrieved_chunks.length || 0)
       )[0];
+  };
+
+  const toggleAnswer = (experimentId: string, index: number) => {
+    const key = `${experimentId}-${index}`;
+    setExpandedAnswers(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
   };
 
   return (
@@ -363,6 +377,7 @@ const Experiments = () => {
                       <Tabs defaultValue="results" className="w-full">
                         <TabsList>
                           <TabsTrigger value="results">Results</TabsTrigger>
+                          <TabsTrigger value="answers">Full Answers</TabsTrigger>
                           <TabsTrigger value="comparison">Comparison</TabsTrigger>
                         </TabsList>
 
@@ -385,17 +400,19 @@ const Experiments = () => {
                               if (!result) return null;
 
                               return (
-                                <Card key={index} className="p-4">
+                                <Card key={index} className="p-4 hover:shadow-lg transition-shadow">
                                   <div className="flex items-center justify-between mb-3">
-                                    <Badge variant="outline">Chunk: {exp.chunk_size}</Badge>
+                                    <Badge variant="outline" className="text-base px-3 py-1">
+                                      Chunk: {exp.chunk_size}
+                                    </Badge>
                                     <Badge variant="secondary">
                                       {result.retrieved_chunks.length} chunks
                                     </Badge>
                                   </div>
-                                  <div className="space-y-2 text-sm">
-                                    <div className="flex justify-between">
+                                  <div className="space-y-2 text-sm mb-3">
+                                    <div className="flex justify-between items-center">
                                       <span className="text-muted-foreground">Latency</span>
-                                      <span className="font-semibold">{result.latency.toFixed(2)}s</span>
+                                      <span className="font-semibold text-lg">{result.latency.toFixed(2)}s</span>
                                     </div>
                                     <div className="flex justify-between">
                                       <span className="text-muted-foreground">Total Chunks</span>
@@ -409,7 +426,8 @@ const Experiments = () => {
                                     )}
                                   </div>
                                   <div className="mt-3 pt-3 border-t">
-                                    <p className="text-xs text-muted-foreground line-clamp-3">
+                                    <p className="text-xs font-semibold text-muted-foreground mb-2">Answer Preview:</p>
+                                    <p className="text-sm leading-relaxed line-clamp-3">
                                       {result.answer}
                                     </p>
                                   </div>
@@ -419,21 +437,82 @@ const Experiments = () => {
                           </div>
                         </TabsContent>
 
+                        <TabsContent value="answers" className="mt-4 space-y-4">
+                          {experiment.results.experiments.map((exp, index) => {
+                            if (exp.error || !exp.result) return null;
+                            
+                            const key = `${experiment.id}-${index}`;
+                            const isExpanded = expandedAnswers.has(key);
+                            
+                            return (
+                              <Card key={index} className="p-6">
+                                <div className="flex items-center justify-between mb-4">
+                                  <div className="flex items-center gap-3">
+                                    <Badge variant="outline" className="text-base px-3 py-1">
+                                      Chunk Size: {exp.chunk_size}
+                                    </Badge>
+                                    <span className="text-sm text-muted-foreground">
+                                      {exp.result.retrieved_chunks.length} chunks • {exp.result.latency.toFixed(2)}s
+                                    </span>
+                                  </div>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => toggleAnswer(experiment.id, index)}
+                                  >
+                                    {isExpanded ? (
+                                      <>
+                                        <ChevronUp className="w-4 h-4 mr-2" />
+                                        Collapse
+                                      </>
+                                    ) : (
+                                      <>
+                                        <ChevronDown className="w-4 h-4 mr-2" />
+                                        Expand
+                                      </>
+                                    )}
+                                  </Button>
+                                </div>
+                                <div className="bg-secondary/50 rounded-lg p-4">
+                                  <p className={`text-base leading-relaxed whitespace-pre-wrap ${
+                                    !isExpanded ? 'line-clamp-6' : ''
+                                  }`}>
+                                    {exp.result.answer}
+                                  </p>
+                                </div>
+                              </Card>
+                            );
+                          })}
+                        </TabsContent>
+
                         <TabsContent value="comparison" className="mt-4">
                           <Card className="p-6">
-                            <h4 className="font-semibold mb-4">Best Configuration</h4>
-                            {getBestResult(experiment) && (
-                              <div className="space-y-2">
-                                <p className="text-sm">
-                                  <span className="font-semibold">Chunk Size:</span> {getBestResult(experiment)?.chunk_size}
-                                </p>
-                                <p className="text-sm">
-                                  <span className="font-semibold">Retrieved Chunks:</span> {getBestResult(experiment)?.result?.retrieved_chunks.length}
-                                </p>
-                                <p className="text-sm">
-                                  <span className="font-semibold">Latency:</span> {getBestResult(experiment)?.result?.latency.toFixed(2)}s
-                                </p>
+                            <h4 className="font-semibold mb-4 text-lg">Best Configuration</h4>
+                            {getBestResult(experiment) ? (
+                              <div className="space-y-4">
+                                <div className="grid grid-cols-2 gap-4">
+                                  <div className="p-4 border rounded-lg">
+                                    <p className="text-sm text-muted-foreground mb-1">Chunk Size</p>
+                                    <p className="text-2xl font-bold">{getBestResult(experiment)?.chunk_size}</p>
+                                  </div>
+                                  <div className="p-4 border rounded-lg">
+                                    <p className="text-sm text-muted-foreground mb-1">Retrieved Chunks</p>
+                                    <p className="text-2xl font-bold">{getBestResult(experiment)?.result?.retrieved_chunks.length}</p>
+                                  </div>
+                                </div>
+                                <div className="p-4 border rounded-lg">
+                                  <p className="text-sm text-muted-foreground mb-1">Latency</p>
+                                  <p className="text-2xl font-bold">{getBestResult(experiment)?.result?.latency.toFixed(2)}s</p>
+                                </div>
+                                {getBestResult(experiment)?.result?.answer && (
+                                  <div className="mt-4 p-4 bg-secondary/50 rounded-lg">
+                                    <p className="text-sm font-semibold mb-2">Best Answer:</p>
+                                    <p className="text-sm leading-relaxed whitespace-pre-wrap">{getBestResult(experiment)?.result?.answer}</p>
+                                  </div>
+                                )}
                               </div>
+                            ) : (
+                              <p className="text-muted-foreground">No results available</p>
                             )}
                           </Card>
                         </TabsContent>

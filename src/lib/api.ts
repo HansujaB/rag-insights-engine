@@ -1,13 +1,5 @@
 // API service for backend integration
-// Normalize API_BASE_URL to remove trailing slashes
-const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/+$/, '');
-
-// Warn if using localhost in production
-if (import.meta.env.PROD && API_BASE_URL.includes('localhost')) {
-  console.warn('⚠️ VITE_API_URL is not set! Using localhost. Please set VITE_API_URL in Vercel environment variables.');
-}
-
-console.log('API Base URL:', API_BASE_URL);
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 export interface Document {
   doc_id: string;
@@ -96,24 +88,39 @@ async function apiCall<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
-  // Ensure endpoint starts with / and construct URL properly
-  const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
-  const url = `${API_BASE_URL}${normalizedEndpoint}`;
+  const url = `${API_BASE_URL}${endpoint}`;
   
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...options.headers,
-    },
-  });
+  try {
+    const response = await fetch(url, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...options.headers,
+      },
+    });
 
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: response.statusText }));
-    throw new Error(error.detail || `HTTP error! status: ${response.status}`);
+    if (!response.ok) {
+      let errorDetail = response.statusText;
+      try {
+        const error = await response.json();
+        errorDetail = error.detail || error.message || errorDetail;
+      } catch {
+        // If JSON parsing fails, use status text
+      }
+      throw new Error(errorDetail || `HTTP error! status: ${response.status}`);
+    }
+
+    return response.json();
+  } catch (error) {
+    if (error instanceof Error) {
+      // Check for network errors
+      if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+        throw new Error('Network error: Failed to connect to server. Please check if the backend is running.');
+      }
+      throw error;
+    }
+    throw new Error('Unknown error occurred');
   }
-
-  return response.json();
 }
 
 // Upload endpoints
@@ -122,16 +129,9 @@ export const uploadApi = {
     const formData = new FormData();
     formData.append('file', file);
     
-    // Ensure proper URL construction without double slashes
-    const url = `${API_BASE_URL}/api/upload-docs`;
-    
-    // Log for debugging (remove in production if needed)
-    console.log('Uploading to:', url);
-    
-    const response = await fetch(url, {
+    const response = await fetch(`${API_BASE_URL}/api/upload-docs`, {
       method: 'POST',
       body: formData,
-      credentials: 'include', // Include credentials for CORS
     });
 
     if (!response.ok) {
