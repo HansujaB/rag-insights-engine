@@ -17,7 +17,7 @@ if genai and GEMINI_API_KEY:
 class EmbeddingService:
     """Service for generating embeddings using various models"""
     
-    def __init__(self, model_name: str = "models/text-embedding-004"):
+    def __init__(self, model_name: str = "text-embedding-3-small"):
         self.model_name = model_name
         self.embedding_cache: Dict[str, List[float]] = {}
     
@@ -152,7 +152,7 @@ class EmbeddingService:
 # Global embedder instance
 _embedder = None
 
-def get_embedder(model_name: str = "models/text-embedding-004") -> EmbeddingService:
+def get_embedder(model_name: str = "text-embedding-3-small") -> EmbeddingService:
     """Get or create embedder instance"""
     global _embedder
     if _embedder is None:
