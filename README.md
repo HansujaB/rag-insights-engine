@@ -259,18 +259,6 @@ npm run build
 gunicorn main:app -w 4 -k uvicorn.workers.UvicornWorker
 ```
 
-## 🐛 Troubleshooting
-
-### Backend Issues
-- **Import errors**: Ensure virtual environment is activated
-- **API key errors**: Check `.env` file has correct `GEMINI_API_KEY`
-- **Port already in use**: Change port in uvicorn command
-
-### Frontend Issues
-- **API connection errors**: Verify `VITE_API_URL` matches backend URL
-- **CORS errors**: Check backend CORS configuration in `main.py`
-- **Build errors**: Clear `node_modules` and reinstall
-
 ## 📝 License
 
 This project is open source and available under the MIT License.
