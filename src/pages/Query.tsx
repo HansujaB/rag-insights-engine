@@ -9,7 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
   Send, Loader2, FileText, Settings, 
-  MessageSquare, BarChart3, Sparkles, XCircle, Copy, Check
+  MessageSquare, BarChart3, XCircle, Copy, Check
 } from "lucide-react";
 import { useState, useRef } from "react";
 import { useToast } from "@/hooks/use-toast";
@@ -82,10 +82,14 @@ const Query = () => {
         temperature: temperature,
       });
 
+      console.log('RAG Result:', result); // Debug log
+
       setRagResult(result);
       setError(null);
+      
       const chunksCount = result?.retrieved_chunks?.length || 0;
       const latency = result?.latency ? result.latency.toFixed(2) : 'N/A';
+      
       toast({
         title: "Query completed",
         description: `Retrieved ${chunksCount} chunks in ${latency}s`,
@@ -110,7 +114,6 @@ const Query = () => {
     }
   };
 
-
   const handleEvaluate = async () => {
     if (!ragResult) {
       toast({
@@ -130,10 +133,14 @@ const Query = () => {
           description: "No chunks available for evaluation",
           variant: "destructive",
         });
+        setIsEvaluating(false);
         return;
       }
       
-      const contextChunks = ragResult.retrieved_chunks.map(chunk => chunk.chunk || '').filter(chunk => chunk);
+      const contextChunks = ragResult.retrieved_chunks
+        .map(chunk => chunk?.chunk || '')
+        .filter(chunk => chunk);
+        
       const result = await evaluationApi.evaluate({
         query: ragResult.query || '',
         generated_answer: ragResult.answer || '',
@@ -144,9 +151,10 @@ const Query = () => {
       setEvaluationResult(result);
       toast({
         title: "Evaluation completed",
-        description: `Overall score: ${(result.scores.overall * 100).toFixed(1)}%`,
+        description: `Overall score: ${(result.scores.overall).toFixed(1)}%`,
       });
     } catch (error: any) {
+      console.error('Evaluation error:', error);
       toast({
         title: "Evaluation failed",
         description: error.message || "Failed to evaluate response",
@@ -158,7 +166,7 @@ const Query = () => {
   };
 
   const handleCopyAnswer = async () => {
-    if (!ragResult) return;
+    if (!ragResult?.answer) return;
     try {
       await navigator.clipboard.writeText(ragResult.answer);
       setCopied(true);
@@ -228,7 +236,7 @@ const Query = () => {
                             </Badge>
                           </div>
                           <p className="text-xs text-muted-foreground mt-1">
-                            {doc.word_count.toLocaleString()} words
+                            {doc.word_count?.toLocaleString() || 0} words
                           </p>
                         </label>
                       </div>
@@ -364,174 +372,175 @@ const Query = () => {
 
               {/* Results */}
               <div ref={resultsRef}>
-                {ragResult && !isRunning && (
-                  ragResult.answer ? (
-                <Tabs defaultValue="answer" className="w-full">
-                  <TabsList className="grid w-full grid-cols-3">
-                    <TabsTrigger value="answer">Answer</TabsTrigger>
-                    <TabsTrigger value="chunks">Retrieved Chunks</TabsTrigger>
-                    <TabsTrigger value="evaluation">Evaluation</TabsTrigger>
-                  </TabsList>
+                {ragResult && !isRunning && ragResult.answer && (
+                  <Tabs defaultValue="answer" className="w-full">
+                    <TabsList className="grid w-full grid-cols-3">
+                      <TabsTrigger value="answer">Answer</TabsTrigger>
+                      <TabsTrigger value="chunks">Retrieved Chunks</TabsTrigger>
+                      <TabsTrigger value="evaluation">Evaluation</TabsTrigger>
+                    </TabsList>
 
-                  <TabsContent value="answer" className="space-y-4">
-                    <Card className="p-6 border-2 border-primary/20">
-                      <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-xl font-semibold">Answer</h3>
-                        <div className="flex items-center gap-3">
-                          <div className="flex gap-2 text-sm text-muted-foreground">
-                            {ragResult.latency !== undefined && (
-                              <span>Latency: {ragResult.latency.toFixed(2)}s</span>
-                            )}
-                            {ragResult.usage && ragResult.usage.total_tokens && (
-                              <span>• Tokens: {ragResult.usage.total_tokens}</span>
-                            )}
-                          </div>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={handleCopyAnswer}
-                            className="h-8 w-8 p-0"
-                          >
-                            {copied ? (
-                              <Check className="w-4 h-4 text-green-500" />
-                            ) : (
-                              <Copy className="w-4 h-4" />
-                            )}
-                          </Button>
-                        </div>
-                      </div>
-                      <div className="prose prose-sm max-w-none">
-                        <p className="text-base leading-relaxed whitespace-pre-wrap bg-secondary/30 p-4 rounded-lg">
-                          {ragResult.answer}
-                        </p>
-                      </div>
-                      <div className="mt-4 pt-4 border-t">
-                        <div className="flex flex-wrap gap-2 text-xs">
-                          {ragResult.config && (
-                            <>
-                              {ragResult.config.chunk_size !== undefined && (
-                                <Badge variant="outline">Chunk Size: {ragResult.config.chunk_size}</Badge>
+                    <TabsContent value="answer" className="space-y-4">
+                      <Card className="p-6 border-2 border-primary/20">
+                        <div className="flex items-center justify-between mb-4">
+                          <h3 className="text-xl font-semibold">Answer</h3>
+                          <div className="flex items-center gap-3">
+                            <div className="flex gap-2 text-sm text-muted-foreground">
+                              {ragResult.latency !== undefined && (
+                                <span>Latency: {ragResult.latency.toFixed(2)}s</span>
                               )}
-                              {ragResult.config.top_k !== undefined && (
-                                <Badge variant="outline">Top K: {ragResult.config.top_k}</Badge>
+                              {ragResult.usage?.total_tokens && (
+                                <span>• Tokens: {ragResult.usage.total_tokens}</span>
                               )}
-                              {ragResult.config.model && (
-                                <Badge variant="outline">Model: {ragResult.config.model}</Badge>
-                              )}
-                            </>
-                          )}
-                          {ragResult.total_chunks_indexed !== undefined && (
-                            <Badge variant="outline">Chunks Indexed: {ragResult.total_chunks_indexed}</Badge>
-                          )}
-                        </div>
-                      </div>
-                    </Card>
-                  </TabsContent>
-
-                  <TabsContent value="chunks" className="space-y-4">
-                    <Card className="p-6">
-                      <h3 className="text-lg font-semibold mb-4">
-                        Retrieved Chunks ({ragResult.retrieved_chunks?.length || 0})
-                      </h3>
-                      <div className="space-y-4">
-                        {ragResult.retrieved_chunks && ragResult.retrieved_chunks.length > 0 ? (
-                          ragResult.retrieved_chunks.map((chunk, index) => (
-                          <div
-                            key={index}
-                            className="p-4 border rounded-lg bg-secondary/50"
-                          >
-                            <div className="flex items-center justify-between mb-2">
-                              <Badge variant="outline">Rank #{index + 1}</Badge>
-                              <div className="flex gap-2 text-xs text-muted-foreground">
-                                <span>Score: {chunk.score.toFixed(4)}</span>
-                                <span>• Doc: {chunk.doc_id.slice(0, 8)}...</span>
-                              </div>
                             </div>
-                            <p className="text-sm leading-relaxed">{chunk.chunk || 'No content'}</p>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={handleCopyAnswer}
+                              className="h-8 w-8 p-0"
+                            >
+                              {copied ? (
+                                <Check className="w-4 h-4 text-green-500" />
+                              ) : (
+                                <Copy className="w-4 h-4" />
+                              )}
+                            </Button>
                           </div>
-                        ))
+                        </div>
+                        <div className="prose prose-sm max-w-none">
+                          <p className="text-base leading-relaxed whitespace-pre-wrap bg-secondary/30 p-4 rounded-lg">
+                            {ragResult.answer}
+                          </p>
+                        </div>
+                        <div className="mt-4 pt-4 border-t">
+                          <div className="flex flex-wrap gap-2 text-xs">
+                            {ragResult.config?.chunk_size && (
+                              <Badge variant="outline">Chunk Size: {ragResult.config.chunk_size}</Badge>
+                            )}
+                            {ragResult.config?.top_k && (
+                              <Badge variant="outline">Top K: {ragResult.config.top_k}</Badge>
+                            )}
+                            {ragResult.config?.model && (
+                              <Badge variant="outline">Model: {ragResult.config.model}</Badge>
+                            )}
+                            {ragResult.total_chunks_indexed !== undefined && (
+                              <Badge variant="outline">Chunks Indexed: {ragResult.total_chunks_indexed}</Badge>
+                            )}
+                          </div>
+                        </div>
+                      </Card>
+                    </TabsContent>
+
+                    <TabsContent value="chunks" className="space-y-4">
+                      <Card className="p-6">
+                        <h3 className="text-lg font-semibold mb-4">
+                          Retrieved Chunks ({ragResult.retrieved_chunks?.length || 0})
+                        </h3>
+                        <div className="space-y-4">
+                          {ragResult.retrieved_chunks && ragResult.retrieved_chunks.length > 0 ? (
+                            ragResult.retrieved_chunks.map((chunk, index) => (
+                              <div
+                                key={index}
+                                className="p-4 border rounded-lg bg-secondary/50"
+                              >
+                                <div className="flex items-center justify-between mb-2">
+                                  <Badge variant="outline">Rank #{index + 1}</Badge>
+                                  <div className="flex gap-2 text-xs text-muted-foreground">
+                                    {chunk.score !== undefined && (
+                                      <span>Score: {chunk.score.toFixed(4)}</span>
+                                    )}
+                                    {chunk.metadata?.doc_id && (
+                                      <span>• Doc: {chunk.metadata.doc_id.slice(0, 8)}...</span>
+                                    )}
+                                  </div>
+                                </div>
+                                <p className="text-sm leading-relaxed">{chunk.chunk || 'No content'}</p>
+                              </div>
+                            ))
+                          ) : (
+                            <p className="text-sm text-muted-foreground text-center py-8">
+                              No chunks retrieved
+                            </p>
+                          )}
+                        </div>
+                      </Card>
+                    </TabsContent>
+
+                    <TabsContent value="evaluation" className="space-y-4">
+                      <Card className="p-6">
+                        <div className="flex items-center justify-between mb-4">
+                          <h3 className="text-lg font-semibold">Evaluation</h3>
+                          {!evaluationResult && (
+                            <Button
+                              onClick={handleEvaluate}
+                              disabled={isEvaluating}
+                              size="sm"
+                            >
+                              {isEvaluating ? (
+                                <>
+                                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                  Evaluating...
+                                </>
+                              ) : (
+                                <>
+                                  <BarChart3 className="w-4 h-4 mr-2" />
+                                  Evaluate Response
+                                </>
+                              )}
+                            </Button>
+                          )}
+                        </div>
+
+                        {evaluationResult ? (
+                          <div className="space-y-4">
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                              {Object.entries(evaluationResult.scores).map(([key, value]) => (
+                                <div key={key} className="p-4 border rounded-lg">
+                                  <p className="text-xs text-muted-foreground mb-1 capitalize">
+                                    {key}
+                                  </p>
+                                  <div className="flex items-center gap-2">
+                                    <div className="flex-1 h-2 bg-secondary rounded-full overflow-hidden">
+                                      <div
+                                        className="h-full bg-primary transition-all"
+                                        style={{ width: `${value}%` }}
+                                      />
+                                    </div>
+                                    <span className="text-sm font-semibold">
+                                      {value.toFixed(0)}%
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                            <div className="mt-4 p-4 bg-secondary rounded-lg">
+                              <p className="text-sm font-semibold mb-2">Feedback</p>
+                              <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                                {evaluationResult.feedback}
+                              </p>
+                            </div>
+                          </div>
                         ) : (
                           <p className="text-sm text-muted-foreground text-center py-8">
-                            No chunks retrieved
+                            Click "Evaluate Response" to analyze the answer quality
                           </p>
                         )}
-                      </div>
-                    </Card>
-                  </TabsContent>
+                      </Card>
+                    </TabsContent>
+                  </Tabs>
+                )}
 
-                  <TabsContent value="evaluation" className="space-y-4">
-                    <Card className="p-6">
-                      <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-lg font-semibold">Evaluation</h3>
-                        {!evaluationResult && (
-                          <Button
-                            onClick={handleEvaluate}
-                            disabled={isEvaluating}
-                            size="sm"
-                          >
-                            {isEvaluating ? (
-                              <>
-                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                Evaluating...
-                              </>
-                            ) : (
-                              <>
-                                <BarChart3 className="w-4 h-4 mr-2" />
-                                Evaluate Response
-                              </>
-                            )}
-                          </Button>
-                        )}
+                {/* Invalid response handling */}
+                {ragResult && !isRunning && !ragResult.answer && (
+                  <Card className="p-6 border-yellow-500 bg-yellow-50 dark:bg-yellow-950">
+                    <div className="flex items-center gap-2 text-yellow-600 dark:text-yellow-400">
+                      <XCircle className="w-5 h-5" />
+                      <div>
+                        <h3 className="font-semibold">Invalid Response</h3>
+                        <p className="text-sm">The query completed but no answer was returned.</p>
                       </div>
-
-                      {evaluationResult ? (
-                        <div className="space-y-4">
-                          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                            {Object.entries(evaluationResult.scores).map(([key, value]) => (
-                              <div key={key} className="p-4 border rounded-lg">
-                                <p className="text-xs text-muted-foreground mb-1 capitalize">
-                                  {key}
-                                </p>
-                                <div className="flex items-center gap-2">
-                                  <div className="flex-1 h-2 bg-secondary rounded-full overflow-hidden">
-                                    <div
-                                      className="h-full bg-primary transition-all"
-                                      style={{ width: `${value * 100}%` }}
-                                    />
-                                  </div>
-                                  <span className="text-sm font-semibold">
-                                    {(value * 100).toFixed(0)}%
-                                  </span>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                          <div className="mt-4 p-4 bg-secondary rounded-lg">
-                            <p className="text-sm font-semibold mb-2">Feedback</p>
-                            <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                              {evaluationResult.feedback}
-                            </p>
-                          </div>
-                        </div>
-                      ) : (
-                        <p className="text-sm text-muted-foreground text-center py-8">
-                          Click "Evaluate Response" to analyze the answer quality
-                        </p>
-                      )}
-                    </Card>
-                  </TabsContent>
-                </Tabs>
-                  ) : (
-                    <Card className="p-6 border-yellow-500 bg-yellow-50 dark:bg-yellow-950">
-                      <div className="flex items-center gap-2 text-yellow-600 dark:text-yellow-400">
-                        <XCircle className="w-5 h-5" />
-                        <div>
-                          <h3 className="font-semibold">Invalid Response</h3>
-                          <p className="text-sm">The query completed but no answer was returned. Check the console for details.</p>
-                        </div>
-                      </div>
-                    </Card>
-                  )
+                    </div>
+                  </Card>
                 )}
               </div>
             </div>
@@ -543,4 +552,3 @@ const Query = () => {
 };
 
 export default Query;
-

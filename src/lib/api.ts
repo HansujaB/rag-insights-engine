@@ -10,6 +10,19 @@ export interface Document {
   status: string;
 }
 
+export interface ChunkMetadata {
+  doc_id: string;
+  chunk_id: number;
+  chunk_size: number;
+  text: string;
+}
+
+export interface RetrievedChunk {
+  chunk: string;
+  score: number;
+  metadata: ChunkMetadata;
+}
+
 export interface RAGRequest {
   query: string;
   doc_ids: string[];
@@ -23,11 +36,7 @@ export interface RAGRequest {
 export interface RAGResponse {
   answer: string;
   query: string;
-  retrieved_chunks: Array<{
-    chunk: string;
-    doc_id: string;
-    score: number;
-  }>;
+  retrieved_chunks: RetrievedChunk[];
   config: {
     chunk_size: number;
     overlap_percent: number;
@@ -81,6 +90,7 @@ export interface EvaluationResponse {
     overall: number;
   };
   feedback: string;
+  evaluator_model: string;
 }
 
 // Helper function for API calls
@@ -200,7 +210,7 @@ export const evaluationApi = {
     });
   },
 
-  generateQuestions: async (doc_id: string, num_questions: number = 5, model_name: string = 'gemini-2.0-flash-exp'): Promise<{ doc_id: string; filename: string; questions: string[]; count: number }> => {
+  generateQuestions: async (doc_id: string, num_questions: number = 5, model_name: string = 'llama-3.1-8b-instant'): Promise<{ doc_id: string; filename: string; questions: string[]; count: number }> => {
     return apiCall('/api/generate-questions', {
       method: 'POST',
       body: JSON.stringify({ doc_id, num_questions, model_name }),
@@ -219,5 +229,3 @@ export const evaluationApi = {
 export const healthCheck = async (): Promise<{ status: string }> => {
   return apiCall<{ status: string }>('/health');
 };
-
-
