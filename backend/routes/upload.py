@@ -98,7 +98,7 @@ async def upload_docs(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=f"Failed to save file: {str(e)}")
     
     # Extract text (run in thread pool to avoid blocking)
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     try:
         text = await loop.run_in_executor(
             thread_pool, 
