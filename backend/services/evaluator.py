@@ -2,7 +2,7 @@
 import os
 from typing import Dict, Any, List
 try:
-    import google.generativeai as genai
+    
 except ImportError:
     genai = None
 
@@ -10,7 +10,7 @@ except ImportError:
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
 if genai and GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
+    
 
 
 class RAGEvaluator:

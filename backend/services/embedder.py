@@ -1,160 +1,186 @@
 # backend/services/embedder.py
+"""
+Ollama-based embedder (Grok) with ST fallback and robust retrying.
+
+Environment:
+  OLLAMA_URL   - e.g. http://localhost:11434
+  OLLAMA_MODEL - e.g. grok-3o (set to the local model name you run)
+
+Behavior:
+  - Primary: Ollama /embed endpoint
+  - Fallback: sentence-transformers if Ollama unreachable
+  - Safe retries on 429/5xx with exponential backoff + jitter
+  - Batch & single embedding functions compatible with existing callers
+"""
+
 import os
-from typing import List, Dict, Any
+import time
+import random
+from typing import List, Dict
+import threading
+
 import numpy as np
+import requests
+
 try:
-    import google.generativeai as genai
-except ImportError:
-    genai = None
+    from sentence_transformers import SentenceTransformer
+except Exception:
+    SentenceTransformer = None
 
-# Configure Gemini API
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "grok-3o")
+OLLAMA_EMBED_PATH = "/embed"
 
-if genai and GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
+MAX_RETRIES = 5
+INITIAL_BACKOFF = 0.5
+MAX_BACKOFF = 30
+FALLBACK_DIM = 768
+_lock = threading.Lock()
 
+def _backoff_sleep(attempt: int):
+    t = min(MAX_BACKOFF, INITIAL_BACKOFF * (2 ** attempt)) + random.random() * 0.1
+    time.sleep(t)
+
+class OllamaEmbedError(Exception):
+    pass
 
 class EmbeddingService:
-    """Service for generating embeddings using various models"""
-    
-    def __init__(self, model_name: str = "models/text-embedding-004"):
-        self.model_name = model_name
-        self.embedding_cache: Dict[str, List[float]] = {}
-    
-    def embed_text(self, text: str) -> List[float]:
-        """
-        Generate embedding for a single text
-        
-        Args:
-            text: Input text
-        
-        Returns:
-            Embedding vector as list of floats
-        """
-        # Check cache
-        cache_key = f"{self.model_name}:{text[:100]}"
-        if cache_key in self.embedding_cache:
-            return self.embedding_cache[cache_key]
-        
-        # Generate embedding
-        if genai and GEMINI_API_KEY:
+    def __init__(self, model_name: str = None, ollama_url: str = None):
+        self.model = model_name or OLLAMA_MODEL
+        self.ollama_url = ollama_url or OLLAMA_URL
+        self.embed_url = self.ollama_url.rstrip("/") + OLLAMA_EMBED_PATH
+        self.cache: Dict[str, List[float]] = {}
+        self._st_model = None
+        if SentenceTransformer is not None:
             try:
-                result = genai.embed_content(
-                    model=self.model_name,
-                    content=text,
-                    task_type="retrieval_document"
-                )
-                embedding = result['embedding']
-                self.embedding_cache[cache_key] = embedding
-                return embedding
-            except Exception as e:
-                print(f"Gemini embedding error: {e}")
-                return self._fallback_embedding(text)
-        else:
-            return self._fallback_embedding(text)
-    
+                st_name = os.getenv("SENTENCE_TRANSFORMER_MODEL", "all-MiniLM-L6-v2")
+                self._st_model = SentenceTransformer(st_name)
+            except Exception:
+                self._st_model = None
+
+    def _call_ollama_embed(self, inputs: List[str]) -> List[List[float]]:
+        payload = {"model": self.model, "input": inputs}
+        headers = {"Content-Type": "application/json"}
+        last_err = None
+        for attempt in range(MAX_RETRIES):
+            try:
+                resp = requests.post(self.embed_url, json=payload, headers=headers, timeout=60)
+            except requests.RequestException as e:
+                last_err = e
+                _backoff_sleep(attempt)
+                continue
+            if resp.status_code == 200:
+                try:
+                    data = resp.json()
+                except ValueError:
+                    raise OllamaEmbedError("Invalid JSON response from Ollama")
+                if isinstance(data, dict):
+                    if "embedding" in data:
+                        emb = data["embedding"]
+                        if isinstance(emb[0], (int, float)):
+                            return [emb]
+                        return emb
+                    if "embeddings" in data:
+                        return data["embeddings"]
+                    if "results" in data and isinstance(data["results"], list):
+                        out = []
+                        for r in data["results"]:
+                            if isinstance(r, dict) and "embedding" in r:
+                                out.append(r["embedding"])
+                        if out:
+                            return out
+                if isinstance(data, list) and isinstance(data[0], list):
+                    return data
+                raise OllamaEmbedError("Unexpected Ollama embed response structure")
+            else:
+                last_err = OllamaEmbedError(f"Ollama returned status {resp.status_code}: {resp.text}")
+                if resp.status_code in (429, 503, 502, 500):
+                    _backoff_sleep(attempt)
+                    continue
+                else:
+                    break
+        raise OllamaEmbedError(f"Ollama embed failed after retries: {last_err}")
+
+    def _st_embed(self, texts: List[str]) -> List[List[float]]:
+        if self._st_model is None:
+            return [self._fallback_rand_vec(t) for t in texts]
+        vecs = self._st_model.encode(texts, show_progress_bar=False, convert_to_numpy=True)
+        out = []
+        for v in vecs:
+            n = np.linalg.norm(v)
+            if n > 0:
+                out.append((v / n).tolist())
+            else:
+                out.append(v.tolist())
+        return out
+
+    def _fallback_rand_vec(self, text: str, dim: int = FALLBACK_DIM) -> List[float]:
+        rng = np.random.RandomState(abs(hash(text)) % (2 ** 32))
+        v = rng.randn(dim)
+        n = np.linalg.norm(v)
+        if n > 0:
+            v = v / n
+        return v.tolist()
+
+    def embed_text(self, text: str) -> List[float]:
+        key = f"{self.model}:{text[:200]}"
+        if key in self.cache:
+            return self.cache[key]
+        try:
+            res = self._call_ollama_embed([text])
+            vec = res[0]
+        except Exception:
+            try:
+                vec = self._st_embed([text])[0]
+            except Exception:
+                vec = self._fallback_rand_vec(text)
+        arr = np.array(vec, dtype=float)
+        n = np.linalg.norm(arr)
+        if n > 0:
+            arr = arr / n
+        vec = arr.tolist()
+        self.cache[key] = vec
+        return vec
+
     def embed_batch(self, texts: List[str], batch_size: int = 100) -> List[List[float]]:
-        """
-        Generate embeddings for multiple texts in batches
-        
-        Args:
-            texts: List of input texts
-            batch_size: Number of texts to process at once
-        
-        Returns:
-            List of embedding vectors
-        """
-        embeddings = []
-        
+        out = []
         for i in range(0, len(texts), batch_size):
             batch = texts[i:i + batch_size]
-            
-            if genai and GEMINI_API_KEY:
-                try:
-                    # Gemini can handle batch requests
-                    result = genai.embed_content(
-                        model=self.model_name,
-                        content=batch,
-                        task_type="retrieval_document"
-                    )
-                    # Handle both single and batch responses
-                    if isinstance(result['embedding'][0], list):
-                        embeddings.extend(result['embedding'])
-                    else:
-                        embeddings.append(result['embedding'])
-                except Exception as e:
-                    print(f"Batch embedding error: {e}")
-                    # Fallback to individual processing
-                    for text in batch:
-                        embeddings.append(self._fallback_embedding(text))
-            else:
-                # Fallback embeddings
-                for text in batch:
-                    embeddings.append(self._fallback_embedding(text))
-        
-        return embeddings
-    
-    def embed_query(self, query: str) -> List[float]:
-        """
-        Generate embedding for a query (optimized for retrieval)
-        
-        Args:
-            query: Query text
-        
-        Returns:
-            Embedding vector
-        """
-        if genai and GEMINI_API_KEY:
             try:
-                result = genai.embed_content(
-                    model=self.model_name,
-                    content=query,
-                    task_type="retrieval_query"
-                )
-                return result['embedding']
-            except Exception as e:
-                print(f"Query embedding error: {e}")
-                return self._fallback_embedding(query)
-        else:
-            return self._fallback_embedding(query)
-    
-    def _fallback_embedding(self, text: str, dim: int = 768) -> List[float]:
-        """
-        Generate a simple fallback embedding for testing
-        Uses a deterministic hash-based approach
-        """
-        # Simple hash-based embedding for testing without API key
-        np.random.seed(hash(text) % (2**32))
-        embedding = np.random.randn(dim).tolist()
-        
-        # Normalize
-        norm = np.linalg.norm(embedding)
-        if norm > 0:
-            embedding = (np.array(embedding) / norm).tolist()
-        
-        return embedding
-    
-    def cosine_similarity(self, vec1: List[float], vec2: List[float]) -> float:
-        """Calculate cosine similarity between two vectors"""
-        v1 = np.array(vec1)
-        v2 = np.array(vec2)
-        
-        dot_product = np.dot(v1, v2)
-        norm1 = np.linalg.norm(v1)
-        norm2 = np.linalg.norm(v2)
-        
-        if norm1 == 0 or norm2 == 0:
+                emb = self._call_ollama_embed(batch)
+                if not isinstance(emb, list) or len(emb) != len(batch):
+                    raise OllamaEmbedError("Mismatched embedding count from Ollama")
+            except Exception:
+                try:
+                    emb = self._st_embed(batch)
+                except Exception:
+                    emb = [self._fallback_rand_vec(t) for t in batch]
+            for v in emb:
+                arr = np.array(v, dtype=float)
+                n = np.linalg.norm(arr)
+                if n > 0:
+                    arr = arr / n
+                out.append(arr.tolist())
+        return out
+
+    def embed_query(self, query: str) -> List[float]:
+        return self.embed_text(query)
+
+    def cosine_similarity(self, v1: List[float], v2: List[float]) -> float:
+        a = np.array(v1, dtype=float)
+        b = np.array(v2, dtype=float)
+        na = np.linalg.norm(a)
+        nb = np.linalg.norm(b)
+        if na == 0 or nb == 0:
             return 0.0
-        
-        return float(dot_product / (norm1 * norm2))
+        return float(np.dot(a, b) / (na * nb))
 
-
-# Global embedder instance
 _embedder = None
+_embedder_lock = threading.Lock()
 
-def get_embedder(model_name: str = "models/text-embedding-004") -> EmbeddingService:
-    """Get or create embedder instance"""
+def get_embedder(model_name: str = None, ollama_url: str = None) -> EmbeddingService:
     global _embedder
-    if _embedder is None:
-        _embedder = EmbeddingService(model_name)
-    return _embedder
+    with _embedder_lock:
+        if _embedder is None:
+            _embedder = EmbeddingService(model_name=model_name, ollama_url=ollama_url)
+        return _embedder
