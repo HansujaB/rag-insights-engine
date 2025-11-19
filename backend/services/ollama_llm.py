@@ -5,7 +5,7 @@ import random
 
 # Environment variables
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama-3.1-8b-instant")
 OLLAMA_GEN_PATH = "/api/generate"
 
 def _backoff_sleep(attempt):
