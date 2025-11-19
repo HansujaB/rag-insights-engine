@@ -19,7 +19,7 @@ class RAGRequest(BaseModel):
     chunk_size: int = 512
     overlap_percent: int = 10
     top_k: int = 5
-    model_name: str = "gemini-2.0-flash-exp"
+    model_name: str = "gemini-2.0-flash-lite"
     temperature: float = 0.7
 
 
@@ -29,7 +29,7 @@ class RAGExperimentRequest(BaseModel):
     chunk_sizes: List[int] = [256, 512, 1024, 2048]
     overlap_percent: int = 10
     top_k: int = 5
-    model_name: str = "gemini-2.0-flash-exp"
+    model_name: str = "gemini-2.0-flash-lite"
 
 
 @router.post("/run-rag")
