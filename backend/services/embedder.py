@@ -32,7 +32,7 @@ except Exception:
 # --------------------------
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 # GOOD default embedding model (no grok!)
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "nomic-embed-text")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama-3.1-8b-instant")
 
 OLLAMA_EMBED_PATH = "/embed"
 

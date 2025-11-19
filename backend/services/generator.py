@@ -15,7 +15,7 @@ class LLMGenerator:
 
     def __init__(self, model_name: Optional[str] = None):
         # default: use OLLAMA_MODEL env or a strong default
-        self.model_name = model_name or os.getenv("OLLAMA_MODEL", "llama3.1")
+        self.model_name = model_name or os.getenv("OLLAMA_MODEL", "llama-3.1-8b-instant")
 
     # -----------------------------------------------------------
     # RAG Answer Generation

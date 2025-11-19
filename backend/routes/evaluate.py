@@ -19,7 +19,7 @@ class EvaluationRequest(BaseModel):
     generated_answer: str
     expected_answer: Optional[str] = None
     context_chunks: Optional[List[str]] = None
-    evaluator_model: str = "llama3.1"     # OLLAMA DEFAULT
+    evaluator_model: str = "llama-3.1-8b-instant"     # OLLAMA DEFAULT
 
 
 class ComparisonRequest(BaseModel):
@@ -30,7 +30,7 @@ class ComparisonRequest(BaseModel):
 class QuestionGenerationRequest(BaseModel):
     doc_id: str
     num_questions: int = 5
-    model_name: str = "llama3.1"          # OLLAMA DEFAULT
+    model_name: str = "llama-3.1-8b-instant"          # OLLAMA DEFAULT
 
 
 # -------------------------------------
