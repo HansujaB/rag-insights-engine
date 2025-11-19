@@ -1,17 +1,26 @@
 # backend/services/evaluator.py
-
+import os
+import re
 from typing import Dict, Any, List
-from services.ollama_llm import ollama_generate
+try:
+    from groq import Groq
+except ImportError:
+    Groq = None
+
+# Configure Groq API
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 
 
 class RAGEvaluator:
-    """
-    Evaluator fully powered by local Ollama — no Grok/Gemini anymore.
-    """
-
-    def __init__(self, model_name: str = None):
+    """Service for evaluating RAG responses using Groq API"""
+    
+    def __init__(self, model_name: str = "llama-3.1-8b-instant"):
         self.model_name = model_name
-
+        if Groq and GROQ_API_KEY:
+            self.client = Groq(api_key=GROQ_API_KEY)
+        else:
+            self.client = None
+    
     def evaluate_response(
         self,
         query: str,
@@ -19,78 +28,235 @@ class RAGEvaluator:
         expected_answer: str = None,
         context_chunks: List[str] = None
     ) -> Dict[str, Any]:
-
+        """
+        Evaluate a RAG response using Groq
+        
+        Args:
+            query: Original query
+            generated_answer: Answer from RAG system
+            expected_answer: Ground truth answer (optional)
+            context_chunks: Retrieved context (optional)
+        
+        Returns:
+            Evaluation scores and feedback
+        """
+        if not self.client:
+            return self._fallback_evaluation(query, generated_answer, expected_answer)
+        
+        # Build evaluation prompt
+        prompt = self._build_evaluation_prompt(
+            query, 
+            generated_answer, 
+            expected_answer,
+            context_chunks
+        )
+        
+        try:
+            chat_completion = self.client.chat.completions.create(
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are an expert evaluator for RAG systems. Provide precise numerical scores and clear feedback."
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                model=self.model_name,
+                temperature=0.1,  # Low temperature for consistent evaluation
+                max_tokens=1000
+            )
+            
+            response_text = chat_completion.choices[0].message.content
+            
+            # Parse evaluation
+            scores = self._parse_evaluation(response_text)
+            
+            return {
+                "scores": scores,
+                "feedback": response_text,
+                "evaluator_model": self.model_name
+            }
+        
+        except Exception as e:
+            print(f"Evaluation error: {e}")
+            return self._fallback_evaluation(query, generated_answer, expected_answer)
+    
+    def _build_evaluation_prompt(
+        self,
+        query: str,
+        generated_answer: str,
+        expected_answer: str = None,
+        context_chunks: List[str] = None
+    ) -> str:
+        """Build evaluation prompt"""
+        
         context_section = ""
         if context_chunks:
-            context_section = "\n".join([f"[{i+1}] {c}" for i, c in enumerate(context_chunks)])
+            context = "\n".join([f"[{i+1}] {chunk}" for i, chunk in enumerate(context_chunks)])
+            context_section = f"""
+RETRIEVED CONTEXT:
+{context}
+"""
+        
+        expected_section = ""
+        if expected_answer:
+            expected_section = f"""
+EXPECTED ANSWER:
+{expected_answer}
+"""
+        
+        return f"""You are an expert evaluator for RAG (Retrieval-Augmented Generation) systems.
 
-        expected_section = f"\nEXPECTED ANSWER:\n{expected_answer}\n" if expected_answer else ""
-
-        prompt = f"""
-You are a strict evaluator for a RAG system.
-Score the generated answer on a scale of 0–100 for:
-
-1. Relevance  
-2. Accuracy  
-3. Completeness  
-4. Coherence  
-5. Faithfulness  
-
-Return ONLY scores in JSON:
-
-{{
-  "relevance": ...,
-  "accuracy": ...,
-  "completeness": ...,
-  "coherence": ...,
-  "faithfulness": ...,
-  "overall": ...
-}}
+Evaluate the following RAG response:
 
 QUERY:
 {query}
 
 GENERATED ANSWER:
 {generated_answer}
+{expected_section}{context_section}
 
-{expected_section}
+Provide scores (0-100) for the following metrics:
 
-CONTEXT:
-{context_section}
+1. RELEVANCE: How well does the answer address the query?
+2. ACCURACY: Is the information factually correct?
+3. COMPLETENESS: Does it cover all important aspects?
+4. COHERENCE: Is it well-structured and clear?
+5. FAITHFULNESS: Does it stay true to the context (no hallucinations)?
+
+Respond in this format:
+RELEVANCE: [score]/100
+ACCURACY: [score]/100
+COMPLETENESS: [score]/100
+COHERENCE: [score]/100
+FAITHFULNESS: [score]/100
+OVERALL: [average score]/100
+
+FEEDBACK:
+[Brief explanation of strengths and weaknesses]
 """
+    
+    def _parse_evaluation(self, text: str) -> Dict[str, float]:
+        """Parse evaluation scores from response"""
+        scores = {
+            "relevance": 0.0,
+            "accuracy": 0.0,
+            "completeness": 0.0,
+            "coherence": 0.0,
+            "faithfulness": 0.0,
+            "overall": 0.0
+        }
+        
+        lines = text.split('\n')
+        for line in lines:
+            line = line.strip().upper()
+            if ':' in line:
+                metric, value = line.split(':', 1)
+                metric = metric.strip().lower()
+                
+                # Extract numeric score
+                numbers = re.findall(r'\d+', value)
+                if numbers:
+                    score = float(numbers[0])
+                    if metric in scores:
+                        scores[metric] = score
+        
+        # Calculate overall if not provided
+        if scores["overall"] == 0.0:
+            scores["overall"] = sum([
+                scores["relevance"],
+                scores["accuracy"],
+                scores["completeness"],
+                scores["coherence"],
+                scores["faithfulness"]
+            ]) / 5.0
+        
+        return scores
+    
+    def _fallback_evaluation(
+        self,
+        query: str,
+        generated_answer: str,
+        expected_answer: str = None
+    ) -> Dict[str, Any]:
+        """Simple fallback evaluation"""
+        # Basic heuristics
+        answer_length = len(generated_answer.split())
+        has_content = answer_length > 10
+        
+        base_score = 60.0 if has_content else 30.0
+        
+        scores = {
+            "relevance": base_score,
+            "accuracy": base_score,
+            "completeness": base_score,
+            "coherence": base_score,
+            "faithfulness": base_score,
+            "overall": base_score
+        }
+        
+        feedback = f"""[Fallback Evaluation Mode]
+Answer length: {answer_length} words
+Basic quality: {"Acceptable" if has_content else "Too short"}
 
-        try:
-            text = ollama_generate(prompt, model=self.model_name or "llama3.1")
+Note: Set GROQ_API_KEY environment variable for detailed AI evaluation.
+"""
+        
+        return {
+            "scores": scores,
+            "feedback": feedback,
+            "evaluator_model": "fallback"
+        }
+    
+    def compare_pipelines(
+        self,
+        results: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """
+        Compare multiple pipeline results
+        
+        Args:
+            results: List of evaluation results from different pipelines
+        
+        Returns:
+            Comparison summary with winner
+        """
+        if not results:
+            return {"error": "No results to compare"}
+        
+        # Calculate aggregate scores
+        comparisons = []
+        for result in results:
+            scores = result.get("scores", {})
+            comparisons.append({
+                "pipeline_config": result.get("config", {}),
+                "overall_score": scores.get("overall", 0),
+                "relevance": scores.get("relevance", 0),
+                "accuracy": scores.get("accuracy", 0),
+                "completeness": scores.get("completeness", 0),
+                "coherence": scores.get("coherence", 0),
+                "faithfulness": scores.get("faithfulness", 0),
+            })
+        
+        # Sort by overall score
+        comparisons.sort(key=lambda x: x["overall_score"], reverse=True)
+        
+        winner = comparisons[0] if comparisons else None
+        
+        return {
+            "winner": winner,
+            "all_results": comparisons,
+            "total_pipelines": len(comparisons)
+        }
 
-            import json
-            scores = json.loads(text)
 
-            return {
-                "scores": scores,
-                "feedback": "Evaluation generated by Ollama.",
-                "evaluator_model": self.model_name or "llama3.1"
-            }
-
-        except Exception as e:
-            # fallback
-            return {
-                "scores": {
-                    "relevance": 50,
-                    "accuracy": 50,
-                    "completeness": 50,
-                    "coherence": 50,
-                    "faithfulness": 50,
-                    "overall": 50
-                },
-                "feedback": "[Fallback evaluator]",
-                "error": str(e)
-            }
-
-
-# singleton
+# Global evaluator instance
 _evaluator = None
 
-def get_evaluator(model_name: str = None) -> RAGEvaluator:
+def get_evaluator(model_name: str = "llama-3.1-8b-instant") -> RAGEvaluator:
+    """Get or create evaluator instance"""
     global _evaluator
     if _evaluator is None:
         _evaluator = RAGEvaluator(model_name)
