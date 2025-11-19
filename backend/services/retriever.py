@@ -13,7 +13,7 @@ class FAISSRetriever:
         self.index = None
         self.chunks: List[str] = []
         self.metadata: List[Dict[str, Any]] = []
-        self.dimension = 768  # Default Gemini embedding dimension
+        self.dimension = None
     
     def add_documents(
         self, 
