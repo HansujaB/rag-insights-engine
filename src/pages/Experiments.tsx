@@ -35,7 +35,7 @@ const Experiments = () => {
   const [chunkSizes, setChunkSizes] = useState<number[]>([256, 512, 1024, 2048]);
   const [topK, setTopK] = useState(5);
   const [overlapPercent, setOverlapPercent] = useState(10);
-  const [modelName, setModelName] = useState("gemini-2.0-flash-exp");
+  const [modelName, setModelName] = useState("gemini-2.0-flash-lite");
   const [isRunning, setIsRunning] = useState(false);
   const [expandedAnswers, setExpandedAnswers] = useState<Set<string>>(new Set());
   const { toast } = useToast();
