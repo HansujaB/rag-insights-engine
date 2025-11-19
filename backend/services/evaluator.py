@@ -16,7 +16,7 @@ if genai and GEMINI_API_KEY:
 class RAGEvaluator:
     """Service for evaluating RAG responses"""
     
-    def __init__(self, model_name: str = "models/text-embedding-004"):
+    def __init__(self, model_name: str = "gemini-2.0-flash-lite"):
         self.model_name = model_name
         if genai and GEMINI_API_KEY:
             self.model = genai.GenerativeModel(model_name)
@@ -247,7 +247,7 @@ Note: Set GEMINI_API_KEY environment variable for detailed AI evaluation.
 # Global evaluator instance
 _evaluator = None
 
-def get_evaluator(model_name: str = "models/text-embedding-004") -> RAGEvaluator:
+def get_evaluator(model_name: str = "gemini-2.0-flash-lite") -> RAGEvaluator:
     """Get or create evaluator instance"""
     global _evaluator
     if _evaluator is None:

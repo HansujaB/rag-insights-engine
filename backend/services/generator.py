@@ -16,7 +16,7 @@ if genai and GEMINI_API_KEY:
 class LLMGenerator:
     """Service for generating answers using LLM"""
     
-    def __init__(self, model_name: str = "models/text-embedding-004"):
+    def __init__(self, model_name: str = "gemini-2.0-flash-lite"):
         self.model_name = model_name
         if genai and GEMINI_API_KEY:
             self.model = genai.GenerativeModel(model_name)
@@ -195,7 +195,7 @@ etc.
 # Global generator instance
 _generator = None
 
-def get_generator(model_name: str = "models/text-embedding-004") -> LLMGenerator:
+def get_generator(model_name: str = "gemini-2.0-flash-lite") -> LLMGenerator:
     """Get or create generator instance"""
     global _generator
     if _generator is None:
