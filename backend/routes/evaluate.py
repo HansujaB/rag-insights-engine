@@ -19,7 +19,7 @@ class EvaluationRequest(BaseModel):
     generated_answer: str
     expected_answer: Optional[str] = None
     context_chunks: Optional[List[str]] = None
-    evaluator_model: str = "grok"     # updated
+    evaluator_model: str = "llama3.1"     # OLLAMA DEFAULT
 
 
 class ComparisonRequest(BaseModel):
@@ -30,7 +30,7 @@ class ComparisonRequest(BaseModel):
 class QuestionGenerationRequest(BaseModel):
     doc_id: str
     num_questions: int = 5
-    model_name: str = "grok"          # updated
+    model_name: str = "llama3.1"          # OLLAMA DEFAULT
 
 
 # -------------------------------------
@@ -40,7 +40,7 @@ class QuestionGenerationRequest(BaseModel):
 @router.post("/evaluate")
 async def evaluate_response(request: EvaluationRequest):
     """
-    Evaluate a RAG response using Grok evaluator.
+    Evaluate a RAG response using Ollama evaluator.
     """
     evaluator = get_evaluator(request.evaluator_model)
 
@@ -98,10 +98,9 @@ async def compare_pipelines(request: ComparisonRequest):
 @router.post("/generate-questions")
 async def generate_test_questions(request: QuestionGenerationRequest):
     """
-    Generate test questions from a document using Grok.
+    Generate test questions using Ollama.
     """
     from routes.upload import get_docs_store
-
     docs_store = get_docs_store()
 
     if request.doc_id not in docs_store:
@@ -113,7 +112,7 @@ async def generate_test_questions(request: QuestionGenerationRequest):
     if not text:
         raise HTTPException(status_code=400, detail="Document has no text content")
 
-    generator = get_generator()   # model_name unused now
+    generator = get_generator(request.model_name)
 
     questions = generator.generate_test_questions(
         document_text=text,
@@ -135,12 +134,11 @@ async def generate_test_questions(request: QuestionGenerationRequest):
 @router.post("/batch-evaluate")
 async def batch_evaluate(queries: List[Dict[str, Any]]):
     """
-    Evaluate multiple query-answer pairs using Grok.
+    Evaluate multiple query-answer pairs using Ollama.
     """
     evaluator = get_evaluator()
 
     results = []
-
     for item in queries:
         eval_result = evaluator.evaluate_response(
             query=item.get("query", ""),
@@ -155,15 +153,10 @@ async def batch_evaluate(queries: List[Dict[str, Any]]):
             "feedback": eval_result["feedback"]
         })
 
-    # Aggregate stats
     if results:
         avg_scores = {
-            "relevance": sum(r["scores"]["relevance"] for r in results) / len(results),
-            "accuracy": sum(r["scores"]["accuracy"] for r in results) / len(results),
-            "completeness": sum(r["scores"]["completeness"] for r in results) / len(results),
-            "coherence": sum(r["scores"]["coherence"] for r in results) / len(results),
-            "faithfulness": sum(r["scores"]["faithfulness"] for r in results) / len(results),
-            "overall": sum(r["scores"]["overall"] for r in results) / len(results)
+            k: sum(r["scores"][k] for r in results) / len(results)
+            for k in ["relevance", "accuracy", "completeness", "coherence", "faithfulness", "overall"]
         }
     else:
         avg_scores = {}
